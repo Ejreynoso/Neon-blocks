@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEON BLOCKS — Arcade Tetris</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(ellipse at center, #1a0b2e 0%, #05030a 70%);
+    color: #e8e8ff;
+    font-family: "Courier New", monospace;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; overflow: hidden; user-select: none;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 2px, transparent 2px 4px);
+    z-index: 10;
+  }
+  .wrap { display: flex; gap: 18px; align-items: flex-start; padding: 12px; }
+  .panel {
+    background: rgba(10,5,25,.85); border: 2px solid #ff2bd6;
+    box-shadow: 0 0 14px #ff2bd6, inset 0 0 14px rgba(255,43,214,.25);
+    border-radius: 6px; padding: 12px; min-width: 130px;
+  }
+  .panel h3 { font-size: 12px; letter-spacing: 3px; color: #2bf0ff; text-shadow: 0 0 8px #2bf0ff; margin-bottom: 8px; }
+  .panel .val { font-size: 22px; color: #fff; text-shadow: 0 0 10px #ff2bd6; margin-bottom: 12px; font-weight: bold; }
+  canvas { display: block; image-rendering: pixelated; }
+  #board {
+    border: 3px solid #2bf0ff; border-radius: 4px;
+    box-shadow: 0 0 20px #2bf0ff, 0 0 60px rgba(43,240,255,.3), inset 0 0 30px rgba(0,0,0,.6);
+    background: #07040f;
+  }
+  .side { display: flex; flex-direction: column; gap: 14px; }
+  .mini { background: #07040f; border: 1px solid #444; margin-bottom: 8px; }
+  .title {
+    font-size: 26px; letter-spacing: 4px; text-align: center; margin-bottom: 10px;
+    color: #fff; text-shadow: 0 0 10px #ff2bd6, 0 0 25px #ff2bd6, 0 0 40px #ff2bd6;
+    animation: flicker 3s infinite;
+  }
+  @keyframes flicker { 0%,95%,100%{opacity:1} 96%{opacity:.6} 97%{opacity:1} 98%{opacity:.5} }
+  .keys { font-size: 11px; line-height: 1.7; color: #aaa; }
+  .keys b { color: #2bf0ff; }
+  .center { position: relative; }
+  #overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: rgba(5,3,10,.82); border-radius: 4px; gap: 14px;
+  }
+  #overlay h1 { font-size: 34px; letter-spacing: 5px; color: #fff; text-shadow: 0 0 12px #2bf0ff, 0 0 30px #2bf0ff; }
+  #overlay p { color: #ccc; font-size: 13px; }
+  button {
+    background: transparent; color: #ff2bd6; border: 2px solid #ff2bd6;
+    font-family: inherit; font-size: 16px; letter-spacing: 3px; padding: 10px 24px;
+    cursor: pointer; text-shadow: 0 0 8px #ff2bd6; box-shadow: 0 0 10px #ff2bd6;
+    transition: all .15s;
+  }
+  button:hover { background: #ff2bd6; color: #05030a; text-shadow: none; }
+  .hidden { display: none !important; }
+  #toast {
+    position: absolute; top: 40%; left: 50%; transform: translate(-50%,-50%);
+    font-size: 28px; font-weight: bold; letter-spacing: 3px; color: #ffe94a;
+    text-shadow: 0 0 12px #ffe94a, 0 0 30px #ff8c00; pointer-events: none;
+    opacity: 0; transition: opacity .2s;
+  }
+  #toast.show { opacity: 1; animation: pop .7s ease-out; }
+  @keyframes pop { 0%{transform:translate(-50%,-50%) scale(.6)} 40%{transform:translate(-50%,-50%) scale(1.2)} 100%{transform:translate(-50%,-50%) scale(1)} }
+  #overlay input {
+    background:#07040f; color:#fff; border:2px solid #2bf0ff; font-family:inherit; font-size:18px;
+    letter-spacing:4px; text-align:center; padding:8px; width:180px; text-transform:uppercase; outline:none;
+    box-shadow:0 0 10px #2bf0ff;
+  }
+  table.lb { border-collapse:collapse; font-size:13px; min-width:230px; }
+  table.lb td, table.lb th { padding:3px 8px; text-align:left; }
+  table.lb th { color:#2bf0ff; letter-spacing:2px; font-size:11px; border-bottom:1px solid #2bf0ff55; }
+  table.lb tr.me td { color:#ffe94a; text-shadow:0 0 8px #ffe94a; }
+  table.lb td:nth-child(3) { text-align:right; color:#ff2bd6; }
+  .touch { display: none; gap: 8px; margin-top: 10px; justify-content: center; flex-wrap: wrap; }
+  .touch button { padding: 12px 16px; font-size: 18px; }
+  @media (max-width: 720px) {
+    .wrap { flex-direction: column; align-items: center; gap: 8px; }
+    .side { flex-direction: row; }
+    .panel { min-width: 100px; padding: 8px; }
+    .touch { display: flex; }
+    .keys { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="side">
+    <div class="panel">
+      <h3>HOLD</h3>
+      <canvas id="hold" class="mini" width="96" height="96"></canvas>
+      <h3>PUNTOS</h3><div class="val" id="score">0</div>
+      <h3>LÍNEAS</h3><div class="val" id="lines">0</div>
+      <h3>NIVEL</h3><div class="val" id="level">1</div>
+      <h3>RÉCORD</h3><div class="val" id="hi">0</div>
+    </div>
+  </div>
+
+  <div class="center">
+    <div class="title">NEON BLOCKS</div>
+    <canvas id="board" width="300" height="600"></canvas>
+    <div id="toast"></div>
+    <div id="overlay">
+      <h1>NEON BLOCKS</h1>
+      <p id="ovMsg">Arcade Tetris · Insertá una ficha</p>
+      <div id="nameBox" class="hidden">
+        <p style="margin-bottom:6px">¡Entraste al TOP 10! Tu nombre:</p>
+        <input id="nameIn" maxlength="8" placeholder="AAA">
+        <br><br><button id="saveBtn">GUARDAR</button>
+      </div>
+      <table class="lb" id="lb"></table>
+      <button id="startBtn">▶ JUGAR</button>
+      <p style="font-size:11px;color:#777">♪ música: tecla N</p>
+    </div>
+    <div class="touch">
+      <button data-k="ArrowLeft">◀</button>
+      <button data-k="ArrowDown">▼</button>
+      <button data-k="ArrowRight">▶</button>
+      <button data-k="ArrowUp">⟳</button>
+      <button data-k=" ">DROP</button>
+      <button data-k="c">HOLD</button>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="panel">
+      <h3>SIGUIENTE</h3>
+      <canvas id="next" class="mini" width="96" height="288"></canvas>
+      <h3>CONTROLES</h3>
+      <div class="keys">
+        <b>← →</b> mover<br>
+        <b>↓</b> bajar rápido<br>
+        <b>↑ / X</b> rotar ⟳<br>
+        <b>Z</b> rotar ⟲<br>
+        <b>ESPACIO</b> caída dura<br>
+        <b>C</b> guardar (hold)<br>
+        <b>P</b> pausa<br>
+        <b>M</b> sonido on/off
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const COLS = 10, ROWS = 20, SIZE = 30;
+  const cv = document.getElementById('board'), ctx = cv.getContext('2d');
+  const nextCv = document.getElementById('next'), nctx = nextCv.getContext('2d');
+  const holdCv = document.getElementById('hold'), hctx = holdCv.getContext('2d');
+  const $ = id => document.getElementById(id);
+
+  const SHAPES = {
+    I: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+    O: [[1,1],[1,1]],
+    T: [[0,1,0],[1,1,1],[0,0,0]],
+    S: [[0,1,1],[1,1,0],[0,0,0]],
+    Z: [[1,1,0],[0,1,1],[0,0,0]],
+    J: [[1,0,0],[1,1,1],[0,0,0]],
+    L: [[0,0,1],[1,1,1],[0,0,0]],
+  };
+  const COLORS = { I:'#2bf0ff', O:'#ffe94a', T:'#c84bff', S:'#4bff7a', Z:'#ff3b5c', J:'#4b7bff', L:'#ff9b2b' };
+
+  // ---------- Audio (WebAudio, sin archivos) ----------
+  let actx = null, muted = false;
+  function beep(freq, dur = .07, type = 'square', vol = .05) {
+    if (muted) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(.0001, actx.currentTime + dur);
+      o.connect(g).connect(actx.destination);
+      o.start(); o.stop(actx.currentTime + dur);
+    } catch (e) {}
+  }
+  const sfx = {
+    move: () => beep(220, .03),
+    rotate: () => beep(440, .05, 'triangle'),
+    drop: () => beep(110, .1, 'sawtooth', .08),
+    lock: () => beep(160, .06),
+    clear: n => { [523, 659, 784, 1047].slice(0, n).forEach((f, i) => setTimeout(() => beep(f, .12, 'triangle', .08), i * 60)); },
+    tetris: () => [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, .15, 'square', .08), i * 70)),
+    over: () => [400, 300, 200, 100].forEach((f, i) => setTimeout(() => beep(f, .3, 'sawtooth', .08), i * 180)),
+    level: () => [660, 880, 1100].forEach((f, i) => setTimeout(() => beep(f, .1, 'triangle', .08), i * 80)),
+  };
+
+  // ---------- Música de fondo (secuenciador WebAudio) ----------
+  const NOTE = n => n ? 440 * Math.pow(2, (n - 69) / 12) : 0;
+  // Melodía original estilo chiptune (nº MIDI, 0 = silencio), corcheas
+  const MEL = [76,71,72,74,72,71,69,69,72,76,74,72,71,71,72,74,76,72,69,69,0,74,77,81,79,77,76,72,76,74,72,71,71,72,74,76,72,69,69,0];
+  const BASS = [52,52,57,57,53,53,55,55,52,52,57,57,53,53,55,55,52,52,57,57,53,53,55,55,50,50,55,55,52,52,57,57,52,52,57,57,53,53,55,55];
+  let musicOn = true, musicTimer = null, step = 0, musicGain = null;
+  function playNote(freq, t, dur, type, vol) {
+    if (!freq) return;
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g).connect(musicGain); o.start(t); o.stop(t + dur);
+  }
+  function startMusic() {
+    if (musicTimer) return;
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    if (!musicGain) { musicGain = actx.createGain(); musicGain.connect(actx.destination); }
+    musicGain.gain.value = (musicOn && !muted) ? 1 : 0;
+    let next = actx.currentTime + .05;
+    musicTimer = setInterval(() => {
+      const tempo = Math.min(260, 150 + (level - 1) * 10);
+      const dur = 30 / tempo; // corchea
+      while (next < actx.currentTime + .25) {
+        if (!paused) {
+          const i = step % MEL.length;
+          playNote(NOTE(MEL[i]), next, dur * .9, 'square', .06);
+          playNote(NOTE(BASS[i]), next, dur * .8, 'triangle', .09);
+          if (i % 2 === 0) playNote(80, next, .04, 'sawtooth', .05); // kick
+          if (i % 4 === 2) playNote(3000, next, .03, 'square', .015); // hihat
+          step++;
+        }
+        next += dur;
+      }
+    }, 60);
+  }
+  function stopMusic() { clearInterval(musicTimer); musicTimer = null; }
+  function updateMusicGain() { if (musicGain) musicGain.gain.value = (musicOn && !muted) ? 1 : 0; }
+
+  // ---------- Tabla de récords ----------
+  const LB_KEY = 'neonblocks_lb';
+  const loadLB = () => { try { return JSON.parse(localStorage.getItem(LB_KEY)) || []; } catch { return []; } };
+  const saveLB = lb => localStorage.setItem(LB_KEY, JSON.stringify(lb));
+  function renderLB(highlight = -1) {
+    const lb = loadLB();
+    const rows = lb.map((e, i) => `<tr class="${i === highlight ? 'me' : ''}"><td>${i + 1}.</td><td>${e.name}</td><td>${e.score}</td><td style="color:#888">L${e.lines} N${e.level}</td></tr>`).join('');
+    $('lb').innerHTML = `<tr><th colspan="4">★ TOP 10 ★</th></tr>${rows || '<tr><td colspan="4" style="color:#666">Sin récords todavía</td></tr>'}`;
+  }
+  function qualifies(sc) { const lb = loadLB(); return sc > 0 && (lb.length < 10 || sc > lb[lb.length - 1].score); }
+
+  // ---------- Estado ----------
+  let grid, cur, nextQ, hold, canHold, score, lines, level, over, paused, running = false;
+  let dropTimer = 0, lastTime = 0, bag = [], particles = [], flashRows = [], flashT = 0, shake = 0;
+  let hi = +localStorage.getItem('neonblocks_hi') || 0;
+  $('hi').textContent = hi;
+
+  const emptyGrid = () => Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+
+  function fromBag() {
+    if (!bag.length) { bag = Object.keys(SHAPES).sort(() => Math.random() - .5); }
+    return bag.pop();
+  }
+  function makePiece(type) {
+    const m = SHAPES[type].map(r => r.slice());
+    return { type, m, x: Math.floor((COLS - m.length) / 2), y: type === 'I' ? -1 : 0 };
+  }
+  function spawn() {
+    cur = makePiece(nextQ.shift());
+    nextQ.push(fromBag());
+    canHold = true;
+    if (collides(cur, 0, 0)) gameOver();
+  }
+  function collides(p, dx, dy, m = p.m) {
+    for (let y = 0; y < m.length; y++) for (let x = 0; x < m.length; x++) {
+      if (!m[y][x]) continue;
+      const nx = p.x + x + dx, ny = p.y + y + dy;
+      if (nx < 0 || nx >= COLS || ny >= ROWS) return true;
+      if (ny >= 0 && grid[ny][nx]) return true;
+    }
+    return false;
+  }
+  function rotated(m, dir) {
+    const n = m.length, r = Array.from({ length: n }, () => Array(n).fill(0));
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++)
+      dir > 0 ? r[x][n - 1 - y] = m[y][x] : r[n - 1 - x][y] = m[y][x];
+    return r;
+  }
+  function rotate(dir) {
+    if (cur.type === 'O') return;
+    const m = rotated(cur.m, dir);
+    for (const k of [0, -1, 1, -2, 2]) {
+      if (!collides(cur, k, 0, m)) { cur.m = m; cur.x += k; sfx.rotate(); return; }
+      if (!collides(cur, k, -1, m)) { cur.m = m; cur.x += k; cur.y -= 1; sfx.rotate(); return; }
+    }
+  }
+  function move(dx) { if (!collides(cur, dx, 0)) { cur.x += dx; sfx.move(); } }
+  function softDrop() { if (!collides(cur, 0, 1)) { cur.y++; score += 1; } else lock(); dropTimer = 0; }
+  function hardDrop() {
+    let d = 0; while (!collides(cur, 0, 1)) { cur.y++; d++; }
+    score += d * 2; shake = 6; sfx.drop(); lock();
+  }
+  function ghostY() { let y = cur.y; while (!collides({ ...cur, y }, 0, 1)) y++; return y; }
+  function doHold() {
+    if (!canHold) return;
+    const t = cur.type;
+    if (hold) { cur = makePiece(hold); hold = t; } else { hold = t; spawn(); }
+    canHold = false; sfx.rotate();
+  }
+  function lock() {
+    cur.m.forEach((row, y) => row.forEach((v, x) => {
+      if (v && cur.y + y >= 0) grid[cur.y + y][cur.x + x] = cur.type;
+    }));
+    sfx.lock();
+    const full = [];
+    grid.forEach((row, y) => { if (row.every(c => c)) full.push(y); });
+    if (full.length) {
+      flashRows = full; flashT = 0.25;
+      full.forEach(y => { for (let x = 0; x < COLS; x++) spawnParticles(x, y, COLORS[grid[y][x]]); });
+      const pts = [0, 100, 300, 500, 800][full.length] * level;
+      score += pts;
+      lines += full.length;
+      const nl = Math.floor(lines / 10) + 1;
+      if (nl > level) { level = nl; sfx.level(); toast('NIVEL ' + level); }
+      else toast(full.length === 4 ? '¡TETRIS!' : ['', 'SINGLE', 'DOBLE', 'TRIPLE'][full.length] + ' +' + pts);
+      full.length === 4 ? sfx.tetris() : sfx.clear(full.length);
+      shake = Math.max(shake, full.length * 3);
+    }
+    spawn();
+  }
+  function removeRows() {
+    grid = grid.filter((_, y) => !flashRows.includes(y));
+    while (grid.length < ROWS) grid.unshift(Array(COLS).fill(null));
+    flashRows = [];
+  }
+  function gameOver() {
+    over = true; running = false; sfx.over();
+    if (score > hi) { hi = score; localStorage.setItem('neonblocks_hi', hi); $('hi').textContent = hi; }
+    stopMusic();
+    $('overlay').querySelector('h1').textContent = 'GAME OVER';
+    $('ovMsg').innerHTML = `Puntos: <b>${score}</b> · Líneas: ${lines} · Nivel: ${level}${score >= hi && score > 0 ? '<br>🏆 ¡NUEVO RÉCORD!' : ''}`;
+    $('startBtn').textContent = '↻ OTRA VEZ';
+    if (qualifies(score)) {
+      $('nameBox').classList.remove('hidden'); $('lb').classList.add('hidden'); $('startBtn').classList.add('hidden');
+      $('nameIn').value = localStorage.getItem('neonblocks_name') || '';
+      setTimeout(() => $('nameIn').focus(), 50);
+    } else { renderLB(); }
+    $('overlay').classList.remove('hidden');
+  }
+  function start() {
+    grid = emptyGrid(); bag = []; nextQ = [fromBag(), fromBag(), fromBag()];
+    hold = null; score = 0; lines = 0; level = 1; over = false; paused = false;
+    particles = []; flashRows = []; running = true;
+    $('overlay').classList.add('hidden');
+    startMusic();
+    spawn(); lastTime = performance.now(); requestAnimationFrame(loop);
+  }
+
+  // ---------- Efectos ----------
+  function spawnParticles(gx, gy, color) {
+    for (let i = 0; i < 4; i++) particles.push({
+      x: gx * SIZE + SIZE / 2, y: gy * SIZE + SIZE / 2,
+      vx: (Math.random() - .5) * 8, vy: (Math.random() - .8) * 8, life: 1, color
+    });
+  }
+  let toastTimer;
+  function toast(t) {
+    const el = $('toast'); el.textContent = t; el.classList.remove('show');
+    void el.offsetWidth; el.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 800);
+  }
+
+  // ---------- Dibujo ----------
+  function cell(c, x, y, s, color, alpha = 1) {
+    c.globalAlpha = alpha;
+    c.fillStyle = color; c.fillRect(x, y, s, s);
+    c.fillStyle = 'rgba(255,255,255,.35)'; c.fillRect(x, y, s, s * .18); c.fillRect(x, y, s * .18, s);
+    c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(x, y + s * .82, s, s * .18); c.fillRect(x + s * .82, y, s * .18, s);
+    c.strokeStyle = 'rgba(0,0,0,.6)'; c.lineWidth = 1; c.strokeRect(x + .5, y + .5, s - 1, s - 1);
+    c.globalAlpha = 1;
+  }
+  function drawMini(c, type, oy) {
+    if (!type) return;
+    const m = SHAPES[type], s = 20;
+    const w = m[0].length, h = m.filter(r => r.some(v => v)).length;
+    const ox = (96 - w * s) / 2, yoff = (96 - h * s) / 2 - (type === 'I' ? s : 0);
+    m.forEach((row, y) => row.forEach((v, x) => v && cell(c, ox + x * s, oy + yoff + y * s, s, COLORS[type])));
+  }
+  function draw() {
+    ctx.save();
+    if (shake > 0) { ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake); shake *= .85; if (shake < .5) shake = 0; }
+    ctx.fillStyle = '#07040f'; ctx.fillRect(-10, -10, cv.width + 20, cv.height + 20);
+    ctx.strokeStyle = 'rgba(43,240,255,.08)';
+    for (let x = 0; x <= COLS; x++) { ctx.beginPath(); ctx.moveTo(x * SIZE, 0); ctx.lineTo(x * SIZE, cv.height); ctx.stroke(); }
+    for (let y = 0; y <= ROWS; y++) { ctx.beginPath(); ctx.moveTo(0, y * SIZE); ctx.lineTo(cv.width, y * SIZE); ctx.stroke(); }
+    grid.forEach((row, y) => row.forEach((t, x) => {
+      if (!t) return;
+      if (flashRows.includes(y)) { ctx.fillStyle = '#fff'; ctx.globalAlpha = .5 + .5 * Math.sin(flashT * 60); ctx.fillRect(x * SIZE, y * SIZE, SIZE, SIZE); ctx.globalAlpha = 1; }
+      else cell(ctx, x * SIZE, y * SIZE, SIZE, COLORS[t]);
+    }));
+    if (cur && !over) {
+      const gy = ghostY();
+      cur.m.forEach((row, y) => row.forEach((v, x) => {
+        if (!v) return;
+        if (gy + y >= 0) { ctx.strokeStyle = COLORS[cur.type]; ctx.globalAlpha = .35; ctx.lineWidth = 2; ctx.strokeRect(((cur.x + x) * SIZE) + 2, ((gy + y) * SIZE) + 2, SIZE - 4, SIZE - 4); ctx.globalAlpha = 1; }
+        if (cur.y + y >= 0) { ctx.shadowColor = COLORS[cur.type]; ctx.shadowBlur = 12; cell(ctx, (cur.x + x) * SIZE, (cur.y + y) * SIZE, SIZE, COLORS[cur.type]); ctx.shadowBlur = 0; }
+      }));
+    }
+    particles.forEach(p => { ctx.globalAlpha = p.life; ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 4, 4); });
+    ctx.globalAlpha = 1;
+    if (paused) {
+      ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = '#2bf0ff'; ctx.font = 'bold 30px Courier New'; ctx.textAlign = 'center';
+      ctx.shadowColor = '#2bf0ff'; ctx.shadowBlur = 20; ctx.fillText('PAUSA', cv.width / 2, cv.height / 2); ctx.shadowBlur = 0;
+    }
+    ctx.restore();
+
+    nctx.fillStyle = '#07040f'; nctx.fillRect(0, 0, 96, 288);
+    nextQ.forEach((t, i) => drawMini(nctx, t, i * 96));
+    hctx.fillStyle = '#07040f'; hctx.fillRect(0, 0, 96, 96);
+    hctx.globalAlpha = canHold ? 1 : .4; drawMini(hctx, hold, 0); hctx.globalAlpha = 1;
+
+    $('score').textContent = score; $('lines').textContent = lines; $('level').textContent = level;
+  }
+
+  // ---------- Loop ----------
+  function loop(t) {
+    if (!running) { draw(); return; }
+    const dt = Math.min((t - lastTime) / 1000, .1); lastTime = t;
+    if (!paused) {
+      if (flashT > 0) { flashT -= dt; if (flashT <= 0) removeRows(); }
+      else {
+        dropTimer += dt;
+        const speed = Math.max(.08, Math.pow(0.8 - (level - 1) * 0.007, level - 1));
+        if (dropTimer > speed) { dropTimer = 0; if (!collides(cur, 0, 1)) cur.y++; else lock(); }
+      }
+      particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += .3; p.life -= dt * 1.5; });
+      particles = particles.filter(p => p.life > 0);
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Input ----------
+  function handle(k) {
+    if (!running || over) return;
+    if (k === 'p' || k === 'P') { paused = !paused; return; }
+    if (k === 'm' || k === 'M') { muted = !muted; updateMusicGain(); toast(muted ? 'MUTE' : 'SONIDO'); return; }
+    if (k === 'n' || k === 'N') { musicOn = !musicOn; updateMusicGain(); toast(musicOn ? '♪ MÚSICA ON' : '♪ MÚSICA OFF'); return; }
+    if (paused || flashT > 0) return;
+    switch (k) {
+      case 'ArrowLeft': move(-1); break;
+      case 'ArrowRight': move(1); break;
+      case 'ArrowDown': softDrop(); break;
+      case 'ArrowUp': case 'x': case 'X': rotate(1); break;
+      case 'z': case 'Z': rotate(-1); break;
+      case ' ': hardDrop(); break;
+      case 'c': case 'C': doHold(); break;
+    }
+  }
+  const held = {}; let dasTimer = {};
+  function saveName() {
+    const name = ($('nameIn').value.trim().toUpperCase() || 'AAA').slice(0, 8);
+    localStorage.setItem('neonblocks_name', name);
+    const lb = loadLB(); lb.push({ name, score, lines, level });
+    lb.sort((a, b) => b.score - a.score); lb.length = Math.min(lb.length, 10); saveLB(lb);
+    const idx = lb.findIndex(e => e.name === name && e.score === score);
+    $('nameBox').classList.add('hidden'); $('lb').classList.remove('hidden'); $('startBtn').classList.remove('hidden');
+    renderLB(idx); sfx.level();
+  }
+  $('saveBtn').addEventListener('click', saveName);
+  $('nameIn').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') saveName(); });
+  document.addEventListener('keydown', e => {
+    if (!$('nameBox').classList.contains('hidden')) return;
+    if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', ' '].includes(e.key)) e.preventDefault();
+    if (e.repeat) return;
+    if (!running && (e.key === 'Enter' || e.key === ' ')) { start(); return; }
+    handle(e.key);
+    if (['ArrowLeft', 'ArrowRight', 'ArrowDown'].includes(e.key)) {
+      held[e.key] = true;
+      clearInterval(dasTimer[e.key]);
+      setTimeout(() => { if (held[e.key]) dasTimer[e.key] = setInterval(() => held[e.key] ? handle(e.key) : clearInterval(dasTimer[e.key]), e.key === 'ArrowDown' ? 40 : 55); }, 150);
+    }
+  });
+  document.addEventListener('keyup', e => { held[e.key] = false; clearInterval(dasTimer[e.key]); });
+  document.querySelectorAll('.touch button').forEach(b => {
+    b.addEventListener('touchstart', ev => { ev.preventDefault(); handle(b.dataset.k); }, { passive: false });
+    b.addEventListener('click', () => handle(b.dataset.k));
+  });
+  $('startBtn').addEventListener('click', start);
+
+  grid = emptyGrid(); nextQ = []; renderLB(); draw();
+})();
+</script>
+</body>
+</html>
